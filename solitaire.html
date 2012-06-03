@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<head>
+<script src="http://code.jquery.com/jquery-latest.min.js"></script>
+<script src="http://code.jquery.com/ui/1.8.16/jquery-ui.min.js"></script>
+<script>
+  function canDropSourceOnTarget(source, target) {
+    var s, t;
+    t = getSlot(target);
+    s = getSlot(source);
+    if(s.attr('id')=="mainStack") {
+      return false;
+    }
+    if(s[0] === t[0]) return false;  //  Can't drop a card on its current stack
+    if(t.attr('id')=="mainStack" || t.attr('id')=="playStack") return false;  // Can't drop cards on these stacks
+    if(t.filter('div[id^=slot]').length === 1) {
+      //We must be in the top slots
+      if(source.data("value")!=getLastElement(target).data("value")-1) return false;
+      if(t.children().length>0 &&
+         (Math.min("SC".indexOf(source.data("suit")), 0 )+
+          Math.min("SC".indexOf(getLastElement(target).data("suit")), 0)) 
+          !== -1) return false; // same color, empty slot is always valid     
+    }
+    if(t.filter('div[id^=goal]').length === 1) {
+      //We are dropping a card on the goal stacks
+      if(source.data("suit")!=t.data("suit")) { return false; }
+      if(source.data("value")!=getLastElement(target).data("value")+1) { return false; } 
+    }
+    return true;
+  }
+  function dropSourceOnTarget(source, target) {
+    var sourceSlot, targetSlot;
+    target = getLastElement(target);
+    sourceSlot = getSlot(source);
+    targetSlot = getSlot(target);
+// Do not allow a card to be dropped back on its current slot
+    if(sourceSlot[0] != targetSlot[0]) {
+      if((targetSlot.filter('div[id^=goal]').length === 1) || targetSlot.children().length==0) {
+        source.addClass("first");
+      } else {
+        source.removeClass("first");
+      }
+      source.css({ "left":"", "top":"" });
+      source.appendTo(target);
+      if(sourceSlot.filter('div[id^=slot]').length === 1) getLastElement(sourceSlot).removeClass("cardback");
+    }
+    $("div.highlight").removeClass("highlight"); // sometimes it does not go away like it should
+  }
+
+  function getSlot(elem) {
+    // Find the object for the slot that owns the element
+    // Assume everything is assigned to a slot.  Find the slot in the parent chain.  It is possible that the element is a slot
+    // in which case we won't find it's parent slot.  So add the element to the end and then return the first item.
+    return $(elem).parents("div.slot").andSelf().first();
+  }
+  function getLastElement(elem) {
+    // Find the lowest element in the stack containing the elem parameter
+    if($(elem).children().length==0) 
+      return $(elem)
+    else 
+      return $(elem).find("*").last();
+  }
+  function flipCards() {
+    // Must correct z-index because the drag operations are adding them
+    var card = $("#mainStack").find("*").last();
+    card.removeClass("cardback");
+    card.css("z-index", $("#playStack").find("*").length+1000);  // make sure index is higher than anything in the stack
+    card
+	.appendTo($("#playStack"));
+  }
+  function resetStack() {
+    while($("#playStack").children().length>0) {
+      var card = $("#playStack").find("*").last();
+      card.addClass("cardback");
+      card.css("z-index", $("#mainStack").find("*").length+1000);  // make sure index is higher than anything in the stack
+      card.appendTo($("#mainStack"));
+    }
+  }
+  function createDeck() {
+    // Create and deal the deck
+    var deck = new Array();
+    $.each(["H", "C", "D", "S"], function(index, suit) {
+      color = "blackcard";
+      if("SC".indexOf(suit)== -1) color = "redcard";
+      for(i=1;i<=13;i++) {
+        card = $("<div id=" + suit+i + " class=\"card first " + color + "\">" + suit + " " + i + "</div>");
+        card.addClass("cardback");
+        card.data("suit", suit);
+        card.data("value", i);
+        deck.push(card);
+      }
+    });
+    shuffle(deck);
+    for(i=0;i<deck.length;i++) {
+      $("#mainStack").append(deck[i]);
+    }
+    for(i=1;i<=7;i++) {
+      for(j=i;j<=7;j++) {
+// Move card from top of mainstack to slot j
+        card = getLastElement($("#mainStack"));
+        if(i===j) card.removeClass("cardback");
+        card.appendTo(getLastElement($("#slot"+j)));
+      }
+    }
+  }
+  function createDropStacks() {
+    // Create the 7 drop stacks
+    $("body").append(
+      $("<div id=mainStack class=slot style=\"left: 10px; top: 400px;\"></div>"));
+    $("body").append(
+      $("<div id=playStack class=slot style=\"left: 130px; top: 400px;\"></div>"));
+    for(i=1; i<=7; i++) {
+      var slot = $("<div id=slot" + i + " class=slot style=\"left: " + ((120*i)-100) + "px; top: 50px;\"></div>");
+      slot.data("value", 14);
+      $("body").append(slot);
+    }
+    $.each(["H", "C", "D", "S"], function(index, suit) {
+      var slot = $("<div id=goal" + suit + " class=slot style=\"left: " + ((120*index)+380) + "px; top: 400px;\">" + suit + "</div>");
+      slot.data("suit", suit);
+      slot.data("value", 0);
+      $("body").append(slot);
+    });
+  }
+
+//+ Jonas Raoni Soares Silva
+//@ http://jsfromhell.com/array/shuffle [v1.0]
+shuffle = function(o){ //v1.0
+	for(var j, x, i = o.length; i; j = parseInt(Math.random() * i), x = o[--i], o[i] = o[j], o[j] = x);
+	return o;
+};
+      
+$(function() {
+    
+  createDropStacks();
+  createDeck();
+
+  $("div.card").dblclick(function() {
+    card = $(this);
+    if(!card.hasClass("cardback")) {  // Only allow visible cards
+      stack = getSlot(card);
+      if(card[0]===getLastElement(stack)[0]) {  // This is a top level card, so try to drop it on the goal stack
+        goalStack = $("#goal"+card.data("suit"));
+        if(canDropSourceOnTarget(card, goalStack))
+          dropSourceOnTarget(card, goalStack);
+      }
+    }
+  });
+  $("#mainStack").dblclick(function() {
+    if($(this).children().length==0)
+      resetStack();
+    else
+      flipCards();  
+  });
+
+// All cards are draggable unless they are in the deck or covered by another card in the play stack or suit stack
+  $("div.card").draggable({
+    revert: "invalid",
+    zIndex: "5000",
+    cursor: "move",
+    snap: false,
+    helper: "original",
+    stack: ".card",
+    addClasses: false,
+    start: function() {
+      if($(this).parents("div.slot").attr('id')=="mainStack") {
+        return false;
+      }
+    // If the z-index of the source stack is lower than the target stack, the card may appear underneath regardless of the cards z-index
+    // This forces the z-index of the source stack to be higher than the other stacks
+      $(this).parents("div.slot").css("z-index", "1");
+    },
+    stop: function() {
+//      $("div.highlight").removeClass("highlight");
+      $("div.slot").css("z-index", "");
+    }
+  });
+
+  $("div.slot, div.card").droppable({
+    accept: function(d) { 
+       if(canDropSourceOnTarget(d, $(this))) {
+         //getLastElement($(this)).addClass("highlight");
+         return true;
+       } else { return false;}
+    },
+    greedy: true,
+    activeClass: "highlight", 
+    drop: function( event, ui ) {
+      dropSourceOnTarget($(ui.draggable), $(this));
+    }
+  });
+
+});
+
+</script>
+<style>
+ .slot {
+    color: white;
+    text-align: center;
+    vertical-align: middle;
+    font-family: arial;
+    font-weight: bold;
+    height: 100px; width: 75px;
+    position: fixed;
+    border: 2px solid blue;
+line-height: 100px;
+    background-color: silver;
+    z-index: 0;
+-moz-border-radius: 5px;
+-webkit-border-radius: 5px;
+-moz-box-shadow: 0 1px 3px #999;
+-webkit-box-shadow: 0 1px 3px #999; 
+text-shadow: 0 3px 2px #222; 
+  }
+  .card {
+    font-family: arial;
+    background-color: white;
+    color: white;
+    font-weight: bold;
+    display: block;
+    height: 100px;
+    width: 75px;
+    border: 2px solid black;
+    position: absolute;
+    top: 20px; left: 3px;
+    z-index:1000;
+line-height: 20px;
+-moz-border-radius: 5px;
+-webkit-border-radius: 5px;
+-moz-box-shadow: 0 1px 3px #999;
+-webkit-box-shadow: 0 1px 3px #999; 
+text-shadow: 0 3px 2px #000; 
+  }
+  .redcard {
+    background-color: red;
+  }
+  .blackcard {
+    background-color: gray;
+  }
+  .cardback {
+    text-shadow: none;
+    color: maroon;
+    background-color: maroon;
+  } 
+  .first {
+    left: 0px; top: 0px;
+  }
+  .highlight {
+    -moz-box-shadow: 0 2px 10px #999;
+    -webkit-box-shadow: 0 2px 10px #999; 
+  }
+</style>
+</head>
+<body>
+</body>
+</html>
